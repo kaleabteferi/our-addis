@@ -130,14 +130,21 @@ function wireCommon(){
 
 /* ---------------- MAP ---------------- */
 let mapFilter="all", showIdeas=true;
-function tiles(){const dark=matchMedia("(prefers-color-scheme: dark)").matches;if(dark&&!document.getElementById("darkTiles")){const st=document.createElement("style");st.id="darkTiles";st.textContent=".dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.9)}";document.head.appendChild(st);}return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,className:dark?"dark-tiles":"",attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});}
+/* Map: the Addis Ababa map file is downloaded from the home PC once, kept on the phone, and drawn offline.
+   Until it has been downloaded (e.g. PC off on first run), the online OpenStreetMap map is used instead. */
+let addisPM=null;
+function addisMap(){if(!addisPM)addisPM=(async()=>{if(!window.pmtiles||!window.protomapsL||!window.caches)throw new Error("no offline map support");const c=await caches.open("our-addis-map");let r=await c.match("addis.pmtiles");if(!r){const n=await fetch("addis.pmtiles",{cache:"no-store"});if(!n.ok)throw new Error("offline map not on the PC");await c.put("addis.pmtiles",n.clone());r=n;}const b=await r.blob();return new pmtiles.PMTiles(new pmtiles.FileSource(new File([b],"addis.pmtiles")));})().catch(e=>{addisPM=null;throw e;});return addisPM;}
+function onlineTiles(dark){if(dark&&!document.getElementById("darkTiles")){const st=document.createElement("style");st.id="darkTiles";st.textContent=".dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.9)}";document.head.appendChild(st);}return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,className:dark?"dark-tiles":"",attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});}
+function addTiles(m){const dark=matchMedia("(prefers-color-scheme: dark)").matches;const alive=()=>m===map||m===mini;
+  addisMap().then(p=>{if(alive())protomapsL.leafletLayer({url:p,flavor:dark?"dark":"light",lang:"en",maxDataZoom:15,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://protomaps.com">Protomaps</a>'}).addTo(m);})
+    .catch(()=>{if(alive())onlineTiles(dark).addTo(m);});}
 function pinIcon(cls,label,size){return L.divIcon({className:"",html:'<div class="pin '+cls+'" style="width:'+size+'px;height:'+size+'px">'+label+'</div>',iconSize:[size,size],iconAnchor:[size/2,size/2]});}
 function mapView(){
   $("#app").innerHTML='<div class="view full"><div id="map"></div><div class="mapbar"><div class="chips">'+[["all","All"],["fav","★ Favourites"],["regular","♥ Regulars"],["wish","Want to try"],["fast","Fasting-friendly"]].map(([k,l])=>'<button class="chip" data-f="'+k+'" aria-pressed="'+(mapFilter===k)+'">'+l+'</button>').join("")+'<button class="chip" id="ideasT" aria-pressed="'+showIdeas+'">Ideas</button></div></div>'+
    '<div class="legend"><span><i class="pin fav" style="width:12px;height:12px;border-width:1px"></i>Favourite</span><span><i class="pin regular" style="width:12px;height:12px;border-width:1px"></i>Regular</span><span><i class="pin visited" style="width:12px;height:12px;border-width:1px"></i>Been</span><span><i class="pin wish" style="width:12px;height:12px;border-width:1px"></i>Want to try</span>'+(showIdeas?'<span><i class="pin idea" style="width:10px;height:10px;border-width:1px"></i>Idea</span>':"")+'</div></div>';
   if(map){map.remove();map=null;}
   if(!window.L){$("#map").innerHTML='<div class="empty">The map couldn’t load. Check your connection.</div>';return;}
-  map=L.map("map",{zoomControl:false,attributionControl:true}).setView(ADDIS,13);tiles().addTo(map);L.control.zoom({position:"bottomright"}).addTo(map);
+  map=L.map("map",{zoomControl:false,attributionControl:true}).setView(ADDIS,13);addTiles(map);L.control.zoom({position:"bottomright"}).addTo(map);
   const pts=[];
   for(const p of data.places){const st=pStats(p.id),t=tier(p,st);
     if(mapFilter==="fav"&&t!=="fav")continue;if(mapFilter==="regular"&&t!=="regular"&&!(t==="fav"&&st.n>=3))continue;if(mapFilter==="wish"&&!p.wishlist)continue;if(mapFilter==="fast"&&!p.fasting_friendly)continue;
@@ -249,7 +256,7 @@ function logView(){
 }
 function initMini(){
   if(mini){mini.remove();mini=null;}if(!window.L)return;const d=draft;
-  mini=L.map("mini",{zoomControl:true,attributionControl:false}).setView(d.newPlace.lat?[d.newPlace.lat,d.newPlace.lng]:ADDIS,d.newPlace.lat?16:13);tiles().addTo(mini);
+  mini=L.map("mini",{zoomControl:true,attributionControl:false}).setView(d.newPlace.lat?[d.newPlace.lat,d.newPlace.lng]:ADDIS,d.newPlace.lat?16:13);addTiles(mini);
   let mk=d.newPlace.lat?L.marker([d.newPlace.lat,d.newPlace.lng],{icon:pinIcon("visited","",24)}).addTo(mini):null;
   mini.on("click",e=>{d.newPlace.lat=+e.latlng.lat.toFixed(6);d.newPlace.lng=+e.latlng.lng.toFixed(6);if(mk)mk.setLatLng(e.latlng);else mk=L.marker(e.latlng,{icon:pinIcon("visited","",24)}).addTo(mini);});
   setTimeout(()=>mini&&mini.invalidateSize(),150);

@@ -7,6 +7,9 @@ param([string]$InstallDir = "C:\OurAddis", [int]$Port = 8090)
 $ErrorActionPreference = "Stop"
 $Version = "0.40.6"
 $Sha256  = "33a2a1d255cadded77346fc7f5de37dca21ba4bad0d9cae0235a50b3b703d6d9"
+$PmVersion = "1.31.2"   # go-pmtiles, used once to cut the Addis Ababa map out of the Protomaps OpenStreetMap build
+$PmSha256  = "a658baa4d7e55020aef6ca17bd9ff9faa1582671266b36f58c52db0ac8e785a1"
+$AddisBbox = "38.60,8.80,38.98,9.15"
 $Repo    = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $exe     = Join-Path $InstallDir "pocketbase.exe"
 $data    = Join-Path $InstallDir "pb_data"
@@ -37,6 +40,37 @@ foreach ($pair in @(@("app", "pb_public"), @("server\pb_hooks", "pb_hooks"), @("
   $dst = Join-Path $InstallDir $pair[1]
   if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
   Copy-Item (Join-Path $Repo $pair[0]) $dst -Recurse
+}
+
+Step "Addis Ababa offline map (downloaded once, then reused)"
+$mapFile = Join-Path $InstallDir "maps\addis.pmtiles"
+New-Item -ItemType Directory -Force -Path (Split-Path $mapFile) | Out-Null
+if (-not (Test-Path $mapFile)) {
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $pmZip = Join-Path $env:TEMP "go-pmtiles_$PmVersion.zip"
+    Invoke-WebRequest "https://github.com/protomaps/go-pmtiles/releases/download/v$PmVersion/go-pmtiles_${PmVersion}_Windows_x86_64.zip" -OutFile $pmZip -UseBasicParsing
+    if ((Get-FileHash $pmZip -Algorithm SHA256).Hash.ToLower() -ne $PmSha256) { throw "the map tool download failed its checksum" }
+    $pmDir = Join-Path $env:TEMP "go-pmtiles_$PmVersion"
+    Expand-Archive $pmZip -DestinationPath $pmDir -Force
+    $pmExe = (Get-ChildItem $pmDir -Recurse -Filter "pmtiles.exe" | Select-Object -First 1).FullName
+    $all = (Invoke-WebRequest "https://build-metadata.protomaps.dev/builds.json" -UseBasicParsing).Content | ConvertFrom-Json
+    $builds = @($all | ForEach-Object { $_ } | Where-Object { $_.key -like "*.pmtiles" -and "$($_.version)" -like "4.*" })
+    $build = $builds[-1].key
+    if (-not $build) { throw "couldn't find the latest map build" }
+    Write-Host "Cutting Addis Ababa out of map build $build (a few minutes)..."
+    $part = "$mapFile.part"
+    if (Test-Path $part) { Remove-Item $part -Force }
+    & $pmExe extract "https://build.protomaps.com/$build" $part "--bbox=$AddisBbox" "--maxzoom=15" | Out-Host
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $part)) { throw "the map download didn't finish" }
+    Move-Item $part $mapFile -Force
+  } catch {
+    Write-Host "Couldn't download the offline map ($($_.Exception.Message)). The app uses the online map for now; run this installer again later to retry." -ForegroundColor Yellow
+  }
+}
+if (Test-Path $mapFile) {
+  Copy-Item $mapFile (Join-Path $InstallDir "pb_public\addis.pmtiles") -Force
+  Write-Host ("Offline map ready: {0:N1} MB. Each phone downloads it once, the first time it opens the map." -f ((Get-Item $mapFile).Length / 1MB))
 }
 
 Step "Locking down the data and secrets folders (SYSTEM and Administrators only)"

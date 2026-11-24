@@ -1,11 +1,12 @@
 /* Our Addis service worker: the app opens instantly and fully offline (even when the home PC is off).
    - App files: served from cache, refreshed in the background (stale-while-revalidate).
-   - Map tiles & fonts: cached as you browse, so areas you've looked at work offline.
+   - Addis map file: kept by the app itself in the "our-addis-map" cache (downloaded once).
+   - Online map tiles & fonts: cached as you browse, so areas you've looked at work offline.
    - /api/: never cached; the app's own sync layer handles being offline. */
-const VERSION = "our-addis-v4";
+const VERSION = "our-addis-v5";
 const SHELL = [
   "./", "app.js", "store.js", "fasting.js", "ideas.js", "manifest.webmanifest",
-  "vendor/leaflet.js", "vendor/leaflet.css", "vendor/images/marker-icon.png", "vendor/images/marker-shadow.png",
+  "vendor/leaflet.js", "vendor/leaflet.css", "vendor/pmtiles.js", "vendor/protomaps-leaflet.js", "vendor/images/marker-icon.png", "vendor/images/marker-shadow.png",
   "vendor/images/layers.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-180.png",
 ];
 const TILES = "our-addis-tiles-osm", FONTS = "our-addis-fonts", MAX_TILES = 2500;
@@ -28,7 +29,7 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
 
   if (url.origin === location.origin) {
-    if (url.pathname.includes("/api/") || url.pathname.includes("/_/")) return; // live data & dashboard: network only
+    if (url.pathname.includes("/api/") || url.pathname.includes("/_/") || url.pathname.endsWith(".pmtiles")) return; // live data & dashboard: network only
     e.respondWith((async () => {
       const cache = await caches.open(VERSION);
       const key = req.mode === "navigate" ? "./" : req;

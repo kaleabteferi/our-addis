@@ -38,7 +38,8 @@ Updating later: download the new version and run `install.cmd` again. Your data 
 
 - **Away from home:** keep Tailscale on in the background on the phones, and syncing works on mobile data too.
 - **First sign-in** needs the PC on. After that, the PC can be off for days.
-- **Map tiles and place search** need internet. Map areas you've already viewed stay available offline.
+- **Offline map:** the installer downloads the Addis Ababa map once (OpenStreetMap data via Protomaps, no API key) and each phone keeps its own copy after first opening the map, so it works with no internet and the PC off. Before that, or outside Addis, the online OpenStreetMap map is used. To refresh the map later, delete `C:\OurAddis\maps\addis.pmtiles` and run the installer again.
+- **Place search** needs internet.
 - **Restore:** backups are full zips (database plus photos) in `C:\OurAddis\pb_data\backups` and `Documents\Our Addis backups`. Restore one from the dashboard → Settings → Backups.
 - **Forgot a password:** dashboard → users → edit.
 
