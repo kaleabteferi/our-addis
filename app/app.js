@@ -50,26 +50,37 @@ function authView(msg){
   '<div class="card"><div class="chips" role="tablist" style="margin-bottom:14px"><button class="chip" id="aIn" aria-pressed="true">Sign in</button><button class="chip" id="aUp" aria-pressed="false">Create account</button></div>'+
   '<form id="aForm" style="display:flex;flex-direction:column;gap:12px"><label class="f" id="aNameL" hidden>Your name<input class="inp" id="aName" autocomplete="given-name" placeholder="Abigya"></label>'+
   '<label class="f">Email<input class="inp" id="aEmail" type="email" autocomplete="email" required></label><label class="f">Password<input class="inp" id="aPw" type="password" autocomplete="current-password" minlength="8" required></label>'+
-  '<button class="btn primary block" id="aGo">Sign in</button><p class="err" id="aErr">'+esc(msg||"")+'</p><button type="button" class="btn ghost" id="aForgot">Forgot password?</button></form></div>'+
-  '<p class="small muted">Only the two of us can join. The first two accounts become the couple, and nobody else can see anything.</p></div>';
+  '<button class="btn primary block" id="aGo">Sign in</button><p class="err" id="aErr">'+esc(msg||"")+'</p><p class="small muted" style="margin:0">Forgot your password? Reset it from the dashboard on the home PC.</p></form></div>'+
+  '<p class="small muted">Signing in the first time needs the home PC (and Tailscale on this phone). After that the app works offline. Only the two of us can ever have accounts.</p></div>';
   let mode="in";const set=m=>{mode=m;$("#aIn").setAttribute("aria-pressed",String(m==="in"));$("#aUp").setAttribute("aria-pressed",String(m==="up"));$("#aNameL").hidden=m!=="up";$("#aGo").textContent=m==="up"?"Create account":"Sign in";$("#aPw").autocomplete=m==="up"?"new-password":"current-password";};
   $("#aIn").onclick=()=>set("in");$("#aUp").onclick=()=>set("up");
-  $("#aForgot").onclick=async()=>{const e=$("#aEmail").value.trim();if(!e){$("#aErr").textContent="Type your email first.";return;}try{await S.resetPassword(e);$("#aErr").textContent="Check your email for a reset link.";}catch(x){$("#aErr").textContent=x.message;}};
   $("#aForm").onsubmit=async e=>{e.preventDefault();$("#aGo").disabled=true;$("#aErr").textContent="";
-    try{if(mode==="up"){const r=await S.signUp($("#aEmail").value.trim(),$("#aPw").value,$("#aName").value.trim());if(r.needsConfirm){$("#aErr").textContent="Almost there: open the confirmation email, then come back and sign in.";set("in");}}
-      else await S.signIn($("#aEmail").value.trim(),$("#aPw").value);}
+    try{if(mode==="up")await S.signUp($("#aEmail").value.trim(),$("#aPw").value,$("#aName").value.trim());
+      else await S.signIn($("#aEmail").value.trim(),$("#aPw").value);start();}
     catch(x){$("#aErr").textContent=x.message;}finally{$("#aGo").disabled=false;}};
 }
 async function start(){
+  await S.init();
   me=await S.session();
-  if(!me){if(S.mode==="demo"){await S.signIn();me=await S.session();}else return authView();}
-  if(!(await S.isMember())){$("#tabs").hidden=true;$("#app").innerHTML='<div class="auth"><h1>Our <em>Addis</em></h1><p>This app is private to Kaleab and Abigya.</p><button class="btn" id="out">Sign out</button></div>';$("#out").onclick=()=>S.signOut();return;}
+  if(!me)return authView();
+  if(!(await S.isMember())){$("#tabs").hidden=true;$("#app").innerHTML='<div class="auth"><h1>Our <em>Addis</em></h1><p>This app is private to Kaleab and Abigya.</p><button class="btn" id="out">Sign out</button></div>';$("#out").onclick=()=>S.signOut().catch(e=>toast(e.message));return;}
   $("#tabs").hidden=false;
   $("#app").innerHTML='<div class="view"><p class="muted">Loading our places…</p></div>';
   try{await refresh();}catch(e){$("#app").innerHTML='<div class="view"><p class="err">Couldn’t load: '+esc(e.message)+'</p><button class="btn" onclick="location.reload()">Try again</button></div>';return;}
   const t=location.hash.slice(1);setTab(VIEWS[t]?t:"home");
 }
-S.onAuth(s=>{if(!!s!==!!me){me=s;start();}});
+S.onChange(async()=>{if(!me)return;await refresh();if(tab==="log"||document.querySelector(".sheet-back,.lb"))return;render();});
+S.onStatus(st=>{for(const el of document.querySelectorAll("[data-sync]"))el.innerHTML=syncText(st);const dot=document.querySelector("#syncDot");if(dot)dot.dataset.s=st.state;});
+function syncText(st){const n=st.pending;const ago=st.lastSync?timeAgo(st.lastSync):"";
+  const m={synced:["ok","Synced with home PC"+(ago?" \u00b7 "+ago:"")],syncing:["busy","Syncing\u2026"],pending:["wait",n+" change"+(n===1?"":"s")+" waiting to sync"],
+    offline:["off","Offline \u00b7 saved on this phone"+(n?" \u00b7 "+n+" waiting":"")],unreachable:["off","Home PC not reachable \u00b7 saved on this phone"+(n?" \u00b7 "+n+" waiting":"")],
+    auth:["err","Sign in again to keep syncing"],error:["err","Sync problem: "+esc(st.message||"")],idle:["wait",n?n+" waiting to sync":"Ready"]}[st.state]||["wait",""];
+  return '<span class="sdot '+m[0]+'"></span>'+m[1];}
+function timeAgo(t){const m=Math.round((Date.now()-t)/6e4);return m<1?"just now":m<60?m+" min ago":m<1440?Math.round(m/60)+" h ago":Math.round(m/1440)+" d ago";}
+const syncLine=()=>'<button class="syncline" data-sync onclick="window.OurAddisResync()">'+syncText(S.status())+'</button>';
+window.OurAddisResync=()=>{if(S.status().state!=="auth"){S.syncNow();toast("Checking the home PC\u2026");return;}
+  sheet('<h2 class="disp" style="font-size:1.7rem">Sign in again</h2><p class="small muted" style="margin:0">Everything you logged is safe on this phone and will sync once you\u2019re signed in.</p><label class="f">Email<input class="inp" id="raE" type="email" value="'+esc(me?.email||"")+'"></label><label class="f">Password<input class="inp" id="raP" type="password"></label><button class="btn primary block" id="raGo">Sign in</button><p class="err" id="raErr"></p>',
+  sh=>{sh.querySelector("#raGo").onclick=async()=>{try{await S.signIn(sh.querySelector("#raE").value.trim(),sh.querySelector("#raP").value);closeSheet();toast("Signed in. Syncing\u2026");}catch(e){sh.querySelector("#raErr").textContent=e.message;}};});};
 
 /* ---------------- HOME ---------------- */
 function fastCard(fi){
@@ -93,7 +104,7 @@ function home(){
   const fastVisits=vs.filter(v=>v.fasting).length;
   const li=x=>'<button class="li" data-place="'+esc(x.p.id)+'"><span class="ic">'+x.st.n+'</span><span><b>'+esc(x.p.name)+'</b><small>'+esc(x.p.area||KINDS[x.p.kind]||"")+(x.st.avgSpent?' · ~'+birr(x.st.avgSpent):"")+'</small></span>'+(x.st.avg!=null?stars(x.st.avg):"")+'</button>';
   $("#app").innerHTML='<div class="view">'+
-   (S.mode==="demo"?'<div class="card small" style="background:var(--gold-soft);border-color:transparent"><b>Demo mode.</b> Everything stays in this browser until the app is connected to its private database.</div>':"")+
+   syncLine()+
    '<div class="hello"><div class="eyebrow">'+esc(names.join(" & ")||"Kaleab & Abigya")+'</div><h1 class="disp">Our <em>Addis</em></h1></div>'+
    fastCard(fi)+
    '<button class="btn gold block" id="goNext">✨ Where should we go next?</button>'+
@@ -104,12 +115,12 @@ function home(){
    (regulars.length?'<section class="card"><div class="eyebrow">Where we usually go</div><div class="list">'+regulars.map(li).join("")+'</div></section>':"")+
    (favs.length?'<section class="card"><div class="eyebrow">Our favourites</div><div class="list">'+favs.map(li).join("")+'</div></section>':"")+
    (!vs.length?'<div class="card empty"><h2 class="disp" style="font-size:1.6rem;color:var(--ink)">Your memory book is empty</h2><p>Log the first place you went together: the food, the vibe, a photo.</p><button class="btn primary" data-go="log">+ Log our first outing</button></div>':"")+
-   '<div class="row between small muted"><span>Signed in'+(me?.email?" as "+esc(me.email):"")+'</span><span class="row"><button class="btn ghost small" id="rename">Change my name</button>'+(S.mode==="supabase"?'<button class="btn ghost small" id="signout">Sign out</button>':"")+'</span></div>'+
+   '<div class="row between small muted"><span>Signed in'+(me?.email?" as "+esc(me.email):"")+'</span><span class="row"><button class="btn ghost small" id="rename">Change my name</button>'+'<button class="btn ghost small" id="signout">Sign out</button>'+'</span></div>'+
   '</div>';
   wireCommon();
   $("#goNext").onclick=()=>setTab("next");
   $("#rename").onclick=()=>sheet('<h2 class="disp" style="font-size:1.6rem">Your name</h2><input class="inp" id="nm" maxlength="40" value="'+esc(data.members.find(m=>m.user_id===me?.id)?.display_name||"")+'"><button class="btn primary block" id="nmSave">Save</button>',s=>{s.querySelector("#nmSave").onclick=async()=>{try{await S.rename(s.querySelector("#nm").value.trim());await refresh();closeSheet();render();}catch(e){toast(e.message);}};});
-  if($("#signout"))$("#signout").onclick=()=>S.signOut();
+  $("#signout").onclick=async()=>{try{await S.signOut();}catch(e){toast(e.message);}};
 }
 function wireCommon(){
   document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{if(b.dataset.go==="log")draft=null;setTab(b.dataset.go);});
@@ -281,7 +292,7 @@ async function saveDraft(){
     const v=await S.saveVisit(row);
     for(const pid of d.removed){const ph=data.photos.find(x=>x.id===pid);if(ph)await S.deletePhoto(ph);}
     for(let i=0;i<d.files.length;i++){btn.textContent="Uploading photo "+(i+1)+" of "+d.files.length+"…";const s=await window.OurAddisImg.shrink(d.files[i].file);await S.addPhoto(v.id,s.blob,s.w,s.h);}
-    draft=null;await refresh();toast(d.visitId?"Saved":"Memory saved 💜");setTab("memories");
+    draft=null;await refresh();toast(d.visitId?"Saved":(S.status().state==="synced"||S.status().state==="syncing"?"Memory saved 💜":"Saved on this phone 💜 It will sync to the home PC."));setTab("memories");
   }catch(e){err.textContent=e.message||"Couldn’t save. Try again.";btn.disabled=false;btn.textContent="Try again";}
 }
 
@@ -291,7 +302,7 @@ function memories(){
   let vs=data.visits.slice();
   if(memFilter==="photos")vs=vs.filter(v=>photosOf(v.id).length);if(memFilter==="fast")vs=vs.filter(v=>v.fasting);if(memFilter==="top")vs=vs.filter(v=>(vAvg(v)||0)>=4.5);
   const groups={};for(const v of vs){const k=v.visited_on.slice(0,7);(groups[k]=groups[k]||[]).push(v);}
-  $("#app").innerHTML='<div class="view"><div><div class="eyebrow">'+data.visits.length+' memories</div><h1 class="disp" style="font-size:2.2rem">Our memory book</h1></div>'+
+  $("#app").innerHTML='<div class="view"><div><div class="eyebrow">'+data.visits.length+' memories</div><h1 class="disp" style="font-size:2.2rem">Our memory book</h1></div>'+syncLine()+''+
    '<div class="chips">'+[["all","All"],["photos","With photos"],["top","Loved it"],["fast","Fasting days"]].map(([k,l])=>'<button class="chip" data-m="'+k+'" aria-pressed="'+(memFilter===k)+'">'+l+'</button>').join("")+'</div>'+
    (vs.length?Object.keys(groups).sort().reverse().map(k=>{const sum=groups[k].reduce((a,v)=>a+Number(v.spent_birr||0),0);return '<section style="display:flex;flex-direction:column;gap:12px"><div class="row between"><h2 class="month">'+new Date(k+"-15T12:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"})+'</h2><span class="small muted">'+groups[k].length+' outing'+(groups[k].length>1?"s":"")+(sum?' · '+birr(sum):"")+'</span></div>'+
      groups[k].map(v=>{const p=placeOf(v.place_id)||{name:"?"};const ps=photosOf(v.id);const a=vAvg(v);const txt=v.food_review||v.place_review||v.ordered;
@@ -327,7 +338,7 @@ function nextView(){
   $("#nGo").onclick=()=>{rd();askAI(fi);};
   $("#nOff").onclick=()=>{rd();ns.result={summary:"Quick picks from your own places and our starter list (no internet search).",picks:offlinePicks(fi),offline:true};ns.err="";renderNext();};
   renderNext();
-  if(S.mode==="supabase")S.recentRecs().then(rs=>{const h=$("#nHist");if(!h||!rs.length)return;h.innerHTML='<section class="card"><div class="eyebrow">Earlier suggestions</div><div class="list">'+rs.map((r,i)=>'<button class="li" data-rec="'+i+'"><span class="ic">✨</span><span><b>'+esc((r.result.picks||[]).map(p=>p.name).slice(0,3).join(", "))+'</b><small>'+new Date(r.created_at).toLocaleDateString("en-GB",{day:"numeric",month:"short"})+' · '+esc(r.request.mood||"anything")+'</small></span><span></span></button>').join("")+'</div></section>';
+  S.recentRecs().then(rs=>{const h=$("#nHist");if(!h||!rs.length)return;h.innerHTML='<section class="card"><div class="eyebrow">Earlier suggestions</div><div class="list">'+rs.map((r,i)=>'<button class="li" data-rec="'+i+'"><span class="ic">✨</span><span><b>'+esc((r.result.picks||[]).map(p=>p.name).slice(0,3).join(", "))+'</b><small>'+new Date(r.created_at).toLocaleDateString("en-GB",{day:"numeric",month:"short"})+' · '+esc(r.request.mood||"anything")+'</small></span><span></span></button>').join("")+'</div></section>';
     h.querySelectorAll("[data-rec]").forEach(b=>b.onclick=()=>{ns.result=rs[+b.dataset.rec].result;ns.err="";renderNext();$("#nOut").scrollIntoView({behavior:"smooth"});});}).catch(()=>{});
 }
 function renderNext(){

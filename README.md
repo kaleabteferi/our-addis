@@ -1,20 +1,50 @@
 # Our Addis
 
-A private memory book for Kaleab & Abigya: every place we go in Addis Ababa, with food and place reviews, star ratings, what we spent, photos, a map of our favourites and regulars, stats, and a fasting-aware "Where should we go next?" powered by Claude with web search.
+A private, local-first memory book for Kaleab & Abigya: every place we go in Addis Ababa, with food and place reviews, star ratings, what we spent, photos, a map of favourites and regulars, stats, the Ethiopian Orthodox fasting calendar, and a fasting-aware "Where should we go next?" powered by Claude with web search.
 
-- **Frontend:** plain HTML/JS on GitHub Pages (no build step). Leaflet + OpenStreetMap/CARTO tiles; place search via OpenStreetMap Nominatim.
-- **Backend:** Supabase. Postgres with row-level security, a private photo bucket, email/password sign-in, and an edge function (`recommend`) that calls Claude.
-- **Privacy:** only the first two accounts that sign up become members. Every table and every photo is readable only by members. Photos are served through short-lived signed links.
-- **Fasting calendar:** computed in `fasting.js` (Fasika, Nineveh, Abiy Tsom, Hawaryat, Filseta, Nebiyat, Gahad, Wednesdays/Fridays, with the usual exemptions) plus the Ethiopian date.
-- **Demo mode:** with `config.js` empty, the app runs entirely in the browser so you can try it.
+## How it works
 
-## Setup
+```
+ Kaleab's phone ─┐                         ┌──────────── Windows PC (home copy) ────────────┐
+ (full offline   │  Tailscale (private,    │ PocketBase  ── data.db + photos                │
+  copy in the    ├─ HTTPS, nobody else) ──►│   pb_hooks:  2-account cap, last-edit-wins,    │
+  browser)       │                         │              Claude "where next" (key on PC)   │
+ Abigya's phone ─┘                         │   backups:   nightly 03:00, 14 kept + Documents│
+                                           └────────────────────────────────────────────────┘
+```
 
-1. **Supabase project:** create one (free plan is fine), then run `supabase/migrations/001_init.sql` in the SQL editor (or apply it as a migration).
-2. **Auth:** in Authentication → URL Configuration, set *Site URL* to the GitHub Pages address, e.g. `https://<user>.github.io/our-addis/`.
-3. **AI:** deploy `supabase/functions/recommend` and add the edge-function secret `ANTHROPIC_API_KEY`.
-4. **Connect the app:** put the project URL and anon (publishable) key in `config.js`.
-5. **Host:** turn on GitHub Pages (Settings → Pages → deploy from this branch, `/ (root)`).
-6. Both of you open the site and choose **Create account**. After the two of you have signed up, nobody else can join.
+- **Phones are local-first.** Every visit, review and photo is saved in the phone's own storage (IndexedDB) first, then queued. The app (an installable PWA) opens instantly with no signal and with the PC switched off.
+- **Automatic two-way sync** whenever the phone can reach the PC: on opening, on regaining signal, every 45 s while open, and right after each change. Uploads resume after interruptions, without duplicates.
+- **Conflicts:** if you both edit the same visit, the edit made last (by the phone's clock) wins everywhere. The PC refuses older edits.
+- **Nothing is ever erased on the PC.** Deleting in the app marks the record deleted (it disappears from both phones), but the PC keeps it and can restore it from the dashboard.
+- **Private:** the PC only listens on 127.0.0.1. Tailscale exposes it as HTTPS only to devices in your tailnet. Only two accounts can ever exist. Photos need a signed-in token.
+- **AI picks** go phone → PC → Claude, so the Anthropic key lives only on the PC (`C:\OurAddis\secrets\anthropic.key`). Limited to 25 a day. Offline picks work anywhere.
 
-The recommend function is limited to 25 calls a day. Each call costs a few US cents of Claude usage.
+## Install on the Windows PC (once)
+
+1. Install **Tailscale** on the PC and on both phones (tailscale.com/download), signed in to the same account. In the Tailscale admin console, under **DNS**, enable **MagicDNS** and **HTTPS certificates**.
+2. Download this repo (Code → Download ZIP) and unzip it.
+3. Double-click **`server\windows\install.cmd`** and accept the admin prompt. It:
+   - downloads PocketBase 0.40.6 (checksum-verified) to `C:\OurAddis`
+   - asks for your Anthropic API key (optional; you can rerun later)
+   - asks for a dashboard login (PC only: http://127.0.0.1:8090/_/)
+   - creates the background task **OurAddis** (starts with Windows, restarts itself) and **OurAddis-Backup**
+   - publishes the app over Tailscale and prints the address, e.g. `https://my-pc.tail1234.ts.net/`
+4. On each phone, with Tailscale on, open that address. On iPhone: Share → **Add to Home Screen**. On Android: **Install app**. Then tap **Create account** (Kaleab first, then Abigya).
+
+Updating later: download the new version and run `install.cmd` again. Your data is never touched.
+
+## Good to know
+
+- **Away from home:** keep Tailscale on in the background on the phones, and syncing works on mobile data too.
+- **First sign-in** needs the PC on. After that, the PC can be off for days.
+- **Map tiles and place search** need internet. Map areas you've already viewed stay available offline.
+- **Restore:** backups are full zips (database plus photos) in `C:\OurAddis\pb_data\backups` and `Documents\Our Addis backups`. Restore one from the dashboard → Settings → Backups.
+- **Forgot a password:** dashboard → users → edit.
+
+## Layout
+
+- `app/`: the phone app (served by the PC): `store.js` sync engine, `sw.js` offline shell, `fasting.js` calendar
+- `server/pb_migrations`: schema, rules, backup schedule
+- `server/pb_hooks`: account cap, conflict rule, Claude route
+- `server/windows`: installer and uninstaller
