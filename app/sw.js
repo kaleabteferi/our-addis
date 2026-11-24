@@ -2,19 +2,19 @@
    - App files: served from cache, refreshed in the background (stale-while-revalidate).
    - Map tiles & fonts: cached as you browse, so areas you've looked at work offline.
    - /api/: never cached; the app's own sync layer handles being offline. */
-const VERSION = "our-addis-v2";
+const VERSION = "our-addis-v3";
 const SHELL = [
   "./", "app.js", "store.js", "fasting.js", "ideas.js", "manifest.webmanifest",
   "vendor/leaflet.js", "vendor/leaflet.css", "vendor/images/marker-icon.png", "vendor/images/marker-shadow.png",
   "vendor/images/layers.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-180.png",
 ];
-const TILES = "our-addis-tiles", FONTS = "our-addis-fonts", MAX_TILES = 2500;
+const TILES = "our-addis-tiles-osm", FONTS = "our-addis-fonts", MAX_TILES = 2500;
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("our-addis-v") && k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => (k.startsWith("our-addis-v") && k !== VERSION) || k === "our-addis-tiles").map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 async function trim(name, max) {

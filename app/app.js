@@ -130,7 +130,7 @@ function wireCommon(){
 
 /* ---------------- MAP ---------------- */
 let mapFilter="all", showIdeas=true;
-function tiles(){const dark=matchMedia("(prefers-color-scheme: dark)").matches;return L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/"+(dark?"dark_all":"voyager")+"/{z}/{x}/{y}{r}.png",{maxZoom:19,subdomains:"abcd",attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'});}
+function tiles(){const dark=matchMedia("(prefers-color-scheme: dark)").matches;if(dark&&!document.getElementById("darkTiles")){const st=document.createElement("style");st.id="darkTiles";st.textContent=".dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.9)}";document.head.appendChild(st);}return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,className:dark?"dark-tiles":"",attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});}
 function pinIcon(cls,label,size){return L.divIcon({className:"",html:'<div class="pin '+cls+'" style="width:'+size+'px;height:'+size+'px">'+label+'</div>',iconSize:[size,size],iconAnchor:[size/2,size/2]});}
 function mapView(){
   $("#app").innerHTML='<div class="view full"><div id="map"></div><div class="mapbar"><div class="chips">'+[["all","All"],["fav","★ Favourites"],["regular","♥ Regulars"],["wish","Want to try"],["fast","Fasting-friendly"]].map(([k,l])=>'<button class="chip" data-f="'+k+'" aria-pressed="'+(mapFilter===k)+'">'+l+'</button>').join("")+'<button class="chip" id="ideasT" aria-pressed="'+showIdeas+'">Ideas</button></div></div>'+
